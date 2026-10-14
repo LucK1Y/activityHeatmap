@@ -1,0 +1,5 @@
+calmap
+gpxpy
+fitparse
+pandas
+matplotlib
