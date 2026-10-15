@@ -3,3 +3,4 @@ gpxpy
 fitparse
 pandas
 matplotlib
+tqdm

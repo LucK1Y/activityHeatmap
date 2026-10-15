@@ -16,6 +16,7 @@ import gpxpy
 import matplotlib.pyplot as plt
 import pandas as pd
 from fitparse import FitFile
+from tqdm import tqdm
 
 SUPPORTED_SUFFIXES = {".gpx", ".fit"}
 
@@ -38,6 +39,11 @@ def parse_args() -> argparse.Namespace:
         description="Build yearly GitHub-style heatmaps from GPX/FIT activity files.",
     )
     parser.add_argument("path", help="Path to a GPX/FIT file or a directory containing them")
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Optional directory where generated PNG heatmaps are written",
+    )
     return parser.parse_args()
 
 
@@ -93,27 +99,30 @@ def parse_gpx(path: Path) -> ParsedActivity:
     except Exception as exc:  # noqa: BLE001
         raise ActivityParseError(f"failed to parse GPX: {exc}") from exc
 
-    points: list[tuple[float, float]] = []
-    timestamps: list[datetime] = []
+    try:
+        gpx.smooth(vertical=False, horizontal=True, remove_extremes=True)
+    except Exception:
+        # Continue with raw points if smoothing cannot be applied.
+        pass
 
-    for track in gpx.tracks:
-        for segment in track.segments:
-            for point in segment.points:
-                points.append((point.latitude, point.longitude))
-                if point.time is not None:
-                    timestamps.append(point.time)
-
-    if not timestamps and gpx.time is not None:
-        timestamps.append(gpx.time)
-
-    if not timestamps:
+    start_time = gpx.get_time_bounds().start_time or gpx.time
+    if start_time is None:
         raise ActivityParseError("no timestamp found in GPX track")
 
-    distance_km = calculate_distance_from_points(points)
+    distance_m = gpx.length_2d() or 0.0
+    distance_km = distance_m / 1000.0
+    if distance_km <= 0:
+        points: list[tuple[float, float]] = []
+        for track in gpx.tracks:
+            for segment in track.segments:
+                for point in segment.points:
+                    points.append((point.latitude, point.longitude))
+        distance_km = calculate_distance_from_points(points)
+
     if distance_km <= 0:
         raise ActivityParseError("could not calculate positive distance from GPX track points")
 
-    return ParsedActivity(source=path, day=to_calendar_date(min(timestamps)), distance_km=distance_km)
+    return ParsedActivity(source=path, day=to_calendar_date(start_time), distance_km=distance_km)
 
 
 def parse_fit(path: Path) -> ParsedActivity:
@@ -226,6 +235,18 @@ def main() -> int:
         print(f"Error: path must be a file or directory: {target}")
         return 2
 
+    output_dir_override: Path | None = None
+    if args.output_dir is not None:
+        output_dir_override = Path(args.output_dir).expanduser().resolve()
+        try:
+            output_dir_override.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(f"Error: could not create output directory {output_dir_override}: {exc}")
+            return 2
+        if not output_dir_override.is_dir():
+            print(f"Error: output directory path is not a directory: {output_dir_override}")
+            return 2
+
     candidates = path_candidates(target)
     if not candidates:
         print(f"No supported files found at: {target}")
@@ -235,7 +256,7 @@ def main() -> int:
     parsed: list[ParsedActivity] = []
     skipped: list[tuple[Path, str]] = []
 
-    for candidate in candidates:
+    for candidate in tqdm(candidates, desc="Processing activities", unit="file"):
         try:
             parsed.append(parse_activity(candidate))
         except ActivityParseError as exc:
@@ -247,7 +268,7 @@ def main() -> int:
             print(f"  - {path}: {reason}")
 
     daily_totals = aggregate_daily_distances(parsed)
-    output_dir = target if target.is_dir() else target.parent
+    output_dir = output_dir_override or (target if target.is_dir() else target.parent)
     output_files = render_yearly_heatmaps(daily_totals, output_dir)
 
     total_km = sum(activity.distance_km for activity in parsed)
