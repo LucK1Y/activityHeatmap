@@ -93,13 +93,11 @@ def parse_gpx(path: Path) -> ParsedActivity:
     except Exception as exc:  # noqa: BLE001
         raise ActivityParseError(f"failed to parse GPX: {exc}") from exc
 
-    points: list[tuple[float, float]] = []
     timestamps: list[datetime] = []
 
     for track in gpx.tracks:
         for segment in track.segments:
             for point in segment.points:
-                points.append((point.latitude, point.longitude))
                 if point.time is not None:
                     timestamps.append(point.time)
 
@@ -109,9 +107,17 @@ def parse_gpx(path: Path) -> ParsedActivity:
     if not timestamps:
         raise ActivityParseError("no timestamp found in GPX track")
 
-    distance_km = calculate_distance_from_points(points)
+    raw_distance_km = gpx.length_2d() / 1000.0
+    if raw_distance_km > 0:
+        gpx.smooth(vertical=False, horizontal=True, remove_extremes=True)
+        distance_km = gpx.length_2d() / 1000.0
+        if distance_km <= 0:
+            distance_km = raw_distance_km
+    else:
+        distance_km = raw_distance_km
+
     if distance_km <= 0:
-        raise ActivityParseError("could not calculate positive distance from GPX track points")
+        raise ActivityParseError("could not calculate positive distance from GPX track data")
 
     return ParsedActivity(source=path, day=to_calendar_date(min(timestamps)), distance_km=distance_km)
 

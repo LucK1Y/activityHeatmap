@@ -24,7 +24,7 @@ python activity_heatmap.py /path/to/file-or-directory
 
 - Every activity is treated as sport.
 - Daily totals are the sum of all activity distances recorded for the same calendar day.
-- GPX distances are calculated from track points.
+- GPX distances use gpxpy's built-in 2D length calculation after optional horizontal smoothing.
 - FIT distances prefer recorded distance fields (`distance`/`total_distance`) when present; otherwise distance is calculated from coordinates.
 - Timestamps are converted to calendar dates in UTC. Timezone-aware timestamps are converted to UTC first; naive timestamps are treated as UTC.
 - Unreadable or malformed files are skipped with a printed reason so processing can continue.
