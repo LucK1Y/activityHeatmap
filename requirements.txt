@@ -4,3 +4,4 @@ fitparse
 pandas
 matplotlib
 tqdm
+setuptools
