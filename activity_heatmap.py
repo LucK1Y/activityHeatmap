@@ -19,6 +19,7 @@ from fitparse import FitFile
 from tqdm import tqdm
 
 SUPPORTED_SUFFIXES = {".gpx", ".fit"}
+DUPLICATE_DISTANCE_TOLERANCE_KM = 0.01
 
 
 @dataclass
@@ -178,6 +179,30 @@ def parse_activity(path: Path) -> ParsedActivity:
     raise ActivityParseError(f"unsupported extension: {path.suffix}")
 
 
+def deduplicate_activities(activities: Iterable[ParsedActivity]) -> list[ParsedActivity]:
+    """Keep the first activity for each same-day, same-distance match.
+
+    A small tolerance handles duplicate exports whose calculated lengths differ
+    by a few meters while avoiding rounding every activity to a coarse value.
+    """
+
+    unique: list[ParsedActivity] = []
+    for activity in activities:
+        is_duplicate = any(
+            existing.day == activity.day
+            and math.isclose(
+                existing.distance_km,
+                activity.distance_km,
+                abs_tol=DUPLICATE_DISTANCE_TOLERANCE_KM,
+                rel_tol=0.0,
+            )
+            for existing in unique
+        )
+        if not is_duplicate:
+            unique.append(activity)
+    return unique
+
+
 def aggregate_daily_distances(activities: Iterable[ParsedActivity]) -> dict[date, float]:
     totals: dict[date, float] = defaultdict(float)
     for activity in activities:
@@ -267,14 +292,16 @@ def main() -> int:
         for path, reason in skipped:
             print(f"  - {path}: {reason}")
 
-    daily_totals = aggregate_daily_distances(parsed)
+    unique_parsed = deduplicate_activities(parsed)
+    daily_totals = aggregate_daily_distances(unique_parsed)
     output_dir = output_dir_override or (target if target.is_dir() else target.parent)
     output_files = render_yearly_heatmaps(daily_totals, output_dir)
 
-    total_km = sum(activity.distance_km for activity in parsed)
+    total_km = sum(activity.distance_km for activity in unique_parsed)
     print("Summary:")
     print(f"  Files discovered: {len(candidates)}")
     print(f"  Files processed: {len(parsed)}")
+    print(f"  Duplicate files ignored: {len(parsed) - len(unique_parsed)}")
     print(f"  Files skipped: {len(skipped)}")
     print(f"  Total distance: {total_km:.2f} km")
     if output_files:

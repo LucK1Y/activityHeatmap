@@ -30,5 +30,5 @@ python activity_heatmap.py /path/to/file-or-directory [--output-dir /path/to/out
 - FIT distances prefer recorded distance fields (`distance`/`total_distance`) when present; otherwise distance is calculated from coordinates.
 - Timestamps are converted to calendar dates in UTC. Timezone-aware timestamps are converted to UTC first; naive timestamps are treated as UTC.
 - Unreadable or malformed files are skipped with a printed reason so processing can continue.
-- Duplicate files are currently counted separately (no reliable cross-format deduplication key is enforced by the tool).
+- Same-day activities whose calculated distances differ by no more than 0.01 km (10 meters) are treated as duplicate exports; the first discovered file is kept. This heuristic can merge two genuinely separate activities with the same distance.
 - File processing uses a `tqdm` progress bar showing progress and ETA.
